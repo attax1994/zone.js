@@ -819,6 +819,16 @@ const Zone: ZoneType = (function (global: any) {
       } as any as T;
     }
 
+    /**
+     * 执行某个函数
+     * 1.将currentZoneFrame切换到子Zone，记录原先父Zone的为parent
+     * 2.触发delegate的onInvoke方法（如果有）
+     * @param {Function} callback
+     * @param applyThis
+     * @param {any[]} applyArgs
+     * @param {string} source
+     * @returns {any}
+     */
     public run(callback: Function, applyThis?: any, applyArgs?: any[], source?: string): any;
     public run<T>(
       callback: (...args: any[]) => T, applyThis?: any, applyArgs?: any[], source?: string): T {
@@ -830,6 +840,14 @@ const Zone: ZoneType = (function (global: any) {
       }
     }
 
+    /**
+     * 带有error处理的run
+     * @param {Function} callback
+     * @param applyThis
+     * @param {any[]} applyArgs
+     * @param {string} source
+     * @returns {any}
+     */
     public runGuarded(callback: Function, applyThis?: any, applyArgs?: any[], source?: string): any;
     public runGuarded<T>(
       callback: (...args: any[]) => T, applyThis: any = null, applyArgs?: any[],
@@ -849,26 +867,35 @@ const Zone: ZoneType = (function (global: any) {
     }
 
 
+    /**
+     * 执行任务
+     * @param {Task} task
+     * @param applyThis
+     * @param applyArgs
+     * @returns {any}
+     */
     runTask(task: Task, applyThis?: any, applyArgs?: any): any {
       if (task.zone != this) {
         throw new Error(
           'A task can only be run in the zone of creation! (Creation: ' +
           (task.zone || NO_ZONE).name + '; Execution: ' + this.name + ')');
       }
-      // https://github.com/angular/zone.js/issues/778, sometimes eventTask
-      // will run in notScheduled(canceled) state, we should not try to
-      // run such kind of task but just return
 
+      // 不执行未schedule的事件任务
       if (task.state === notScheduled && task.type === eventTask) {
         return;
       }
 
+      // 放个running标志位，避免重复执行
       const reEntryGuard = task.state != running;
       reEntryGuard && (task as ZoneTask<any>)._transitionTo(running, scheduled);
+
       task.runCount++;
+      // 切换当前任务和ZoneFrame
       const previousTask = _currentTask;
       _currentTask = task;
       _currentZoneFrame = {parent: _currentZoneFrame, zone: this};
+      // 执行任务
       try {
         if (task.type == macroTask && task.data && !task.data.isPeriodic) {
           task.cancelFn = undefined;
@@ -881,27 +908,33 @@ const Zone: ZoneType = (function (global: any) {
           }
         }
       } finally {
-        // if the task's state is notScheduled or unknown, then it has already been cancelled
-        // we should not reset the state to scheduled
+        // 对于已经取消的事件，state应该为notScheduled或者unknown，不应该将其重置为scheduled
         if (task.state !== notScheduled && task.state !== unknown) {
           if (task.type == eventTask || (task.data && task.data.isPeriodic)) {
+            // 已经完成，切到scheduled
             reEntryGuard && (task as ZoneTask<any>)._transitionTo(scheduled, running);
           } else {
+            // 未完成，切回notScheduled
             task.runCount = 0;
             this._updateTaskCount(task as ZoneTask<any>, -1);
             reEntryGuard &&
             (task as ZoneTask<any>)._transitionTo(notScheduled, running, notScheduled);
           }
         }
+        // 回归原来的任务和ZoneFrame
         _currentZoneFrame = _currentZoneFrame.parent!;
         _currentTask = previousTask;
       }
     }
 
+    /**
+     * 安排任务执行
+     * @param {T} task
+     * @returns {T}
+     */
     scheduleTask<T extends Task>(task: T): T {
       if (task.zone && task.zone !== this) {
-        // check if the task was rescheduled, the newZone
-        // should not be the children of the original zone
+        // 不能在子Zone中执行父Zone的任务（否则无法更新父Zone）
         let newZone: any = this;
         while (newZone) {
           if (newZone === task.zone) {
@@ -911,24 +944,24 @@ const Zone: ZoneType = (function (global: any) {
           newZone = newZone.parent;
         }
       }
+      // 状态切为scheduling
       (task as any as ZoneTask<any>)._transitionTo(scheduling, notScheduled);
       const zoneDelegates: ZoneDelegate[] = [];
       (task as any as ZoneTask<any>)._zoneDelegates = zoneDelegates;
       (task as any as ZoneTask<any>)._zone = this;
+      // 安排执行
       try {
         task = this._zoneDelegate.scheduleTask(this, task) as T;
       } catch (err) {
-        // should set task's state to unknown when scheduleTask throw error
-        // because the err may from reschedule, so the fromState maybe notScheduled
+        // 有错误情况下，切回unknown
         (task as any as ZoneTask<any>)._transitionTo(unknown, scheduling, notScheduled);
-        // TODO: @JiaLiPassion, should we check the result from handleError?
         this._zoneDelegate.handleError(this, err);
         throw err;
       }
       if ((task as any as ZoneTask<any>)._zoneDelegates === zoneDelegates) {
-        // we have to check because internally the delegate can reschedule the task.
         this._updateTaskCount(task as any as ZoneTask<any>, 1);
       }
+      // 安排完成后，切换到scheduled
       if ((task as any as ZoneTask<any>).state == scheduling) {
         (task as any as ZoneTask<any>)._transitionTo(scheduled, scheduling);
       }
@@ -956,16 +989,20 @@ const Zone: ZoneType = (function (global: any) {
         new ZoneTask(eventTask, source, callback, data, customSchedule, customCancel));
     }
 
+    /**
+     * 取消任务
+     * @param {Task} task
+     * @returns {any}
+     */
     cancelTask(task: Task): any {
       if (task.zone != this)
-        throw new Error(
-          'A task can only be cancelled in the zone of creation! (Creation: ' +
+        throw new Error('A task can only be cancelled in the zone of creation! (Creation: ' +
           (task.zone || NO_ZONE).name + '; Execution: ' + this.name + ')');
+
       (task as ZoneTask<any>)._transitionTo(canceling, scheduled, running);
       try {
         this._zoneDelegate.cancelTask(this, task);
       } catch (err) {
-        // if error occurs when cancelTask, transit the state to unknown
         (task as ZoneTask<any>)._transitionTo(unknown, canceling);
         this._zoneDelegate.handleError(this, err);
         throw err;
@@ -987,20 +1024,24 @@ const Zone: ZoneType = (function (global: any) {
     }
   }
 
+
+  /**
+   * ZoneDelegate的默认事件处理方法
+   */
   const DELEGATE_ZS: ZoneSpec = {
     name: '',
     onHasTask:
-      (delegate: AmbientZoneDelegate, _: AmbientZone, target: AmbientZone,
-       hasTaskState: HasTaskState): void => delegate.hasTask(target, hasTaskState),
+      (delegate: AmbientZoneDelegate, _: AmbientZone, target: AmbientZone, hasTaskState: HasTaskState): void =>
+        delegate.hasTask(target, hasTaskState),
     onScheduleTask:
       (delegate: AmbientZoneDelegate, _: AmbientZone, target: AmbientZone, task: Task): Task =>
         delegate.scheduleTask(target, task),
     onInvokeTask:
-      (delegate: AmbientZoneDelegate, _: AmbientZone, target: AmbientZone, task: Task,
-       applyThis: any, applyArgs: any): any =>
+      (delegate: AmbientZoneDelegate, _: AmbientZone, target: AmbientZone, task: Task, applyThis: any, applyArgs: any): any =>
         delegate.invokeTask(target, task, applyThis, applyArgs),
-    onCancelTask: (delegate: AmbientZoneDelegate, _: AmbientZone, target: AmbientZone, task: Task):
-      any => delegate.cancelTask(target, task)
+    onCancelTask:
+      (delegate: AmbientZoneDelegate, _: AmbientZone, target: AmbientZone, task: Task): any =>
+        delegate.cancelTask(target, task)
   };
 
   class ZoneDelegate implements AmbientZoneDelegate {
@@ -1128,7 +1169,7 @@ const Zone: ZoneType = (function (global: any) {
     }
 
     /**
-     * 生成子Zone，同时触发onFork事件
+     * 触发onFork事件，生成子Zone
      * @param {Zone} targetZone
      * @param {ZoneSpec} zoneSpec
      * @returns {AmbientZone}
@@ -1153,22 +1194,38 @@ const Zone: ZoneType = (function (global: any) {
         : callback;
     }
 
-    invoke(
-      targetZone: Zone, callback: Function, applyThis: any, applyArgs?: any[],
-      source?: string): any {
-      return this._invokeZS ? this._invokeZS.onInvoke!
+    /**
+     * 执行方法
+     * @param {Zone} targetZone
+     * @param {Function} callback
+     * @param applyThis
+     * @param {any[]} applyArgs
+     * @param {string} source
+     * @returns {any}
+     */
+    invoke(targetZone: Zone, callback: Function, applyThis: any, applyArgs?: any[], source?: string): any {
+      return this._invokeZS
+        ? this._invokeZS.onInvoke!
         (this._invokeDlgt!, this._invokeCurrZone!, targetZone, callback,
-          applyThis, applyArgs, source) :
-        callback.apply(applyThis, applyArgs);
+          applyThis, applyArgs, source)
+        : callback.apply(applyThis, applyArgs);
     }
 
     handleError(targetZone: Zone, error: any): boolean {
-      return this._handleErrorZS ?
-        this._handleErrorZS.onHandleError!
-        (this._handleErrorDlgt!, this._handleErrorCurrZone!, targetZone, error) :
-        true;
+      return this._handleErrorZS
+        ? this._handleErrorZS.onHandleError!(this._handleErrorDlgt!, this._handleErrorCurrZone!, targetZone, error)
+        : true;
     }
 
+    /**
+     * 安排任务执行，对于scheduleFn的选择，遵循以下顺序：
+     * 1. delegate 实例指定的 this._scheduleTaskZS.onScheduleTask
+     * 2. task.scheduleFn
+     * 3. 对于microTask，采用scheduleMicroTask
+     * @param {Zone} targetZone
+     * @param {Task} task
+     * @returns {Task}
+     */
     scheduleTask(targetZone: Zone, task: Task): Task {
       let returnTask: ZoneTask<any> = task as ZoneTask<any>;
       if (this._scheduleTaskZS) {
@@ -1176,8 +1233,7 @@ const Zone: ZoneType = (function (global: any) {
           returnTask._zoneDelegates!.push(this._hasTaskDlgtOwner!);
         }
         returnTask = this._scheduleTaskZS.onScheduleTask!
-        (this._scheduleTaskDlgt!, this._scheduleTaskCurrZone!, targetZone, task) as
-          ZoneTask<any>;
+        (this._scheduleTaskDlgt!, this._scheduleTaskCurrZone!, targetZone, task) as ZoneTask<any>;
         if (!returnTask) returnTask = task as ZoneTask<any>;
       } else {
         if (task.scheduleFn) {
@@ -1191,13 +1247,27 @@ const Zone: ZoneType = (function (global: any) {
       return returnTask;
     }
 
+    /**
+     * 执行任务，触发onInvokeTask事件
+     * @param {Zone} targetZone
+     * @param {Task} task
+     * @param applyThis
+     * @param {any[]} applyArgs
+     * @returns {any}
+     */
     invokeTask(targetZone: Zone, task: Task, applyThis: any, applyArgs?: any[]): any {
-      return this._invokeTaskZS ? this._invokeTaskZS.onInvokeTask!
-        (this._invokeTaskDlgt!, this._invokeTaskCurrZone!, targetZone,
-          task, applyThis, applyArgs) :
-        task.callback.apply(applyThis, applyArgs);
+      return this._invokeTaskZS
+        ? this._invokeTaskZS.onInvokeTask!
+        (this._invokeTaskDlgt!, this._invokeTaskCurrZone!, targetZone, task, applyThis, applyArgs)
+        : task.callback.apply(applyThis, applyArgs);
     }
 
+    /**
+     * 取消任务，触发onCancelTask事件
+     * @param {Zone} targetZone
+     * @param {Task} task
+     * @returns {any}
+     */
     cancelTask(targetZone: Zone, task: Task): any {
       let value: any;
       if (this._cancelTaskZS) {
@@ -1212,6 +1282,11 @@ const Zone: ZoneType = (function (global: any) {
       return value;
     }
 
+    /**
+     * 检查某个Zone中是否还有某类任务，触发onHasTask事件
+     * @param {Zone} targetZone
+     * @param {HasTaskState} isEmpty
+     */
     hasTask(targetZone: Zone, isEmpty: HasTaskState) {
       // hasTask should not throw error so other ZoneDelegate
       // can still trigger hasTask callback
@@ -1224,6 +1299,12 @@ const Zone: ZoneType = (function (global: any) {
       }
     }
 
+    /**
+     * 更新taskCount
+     * @param {TaskType} type
+     * @param {number} count
+     * @private
+     */
     _updateTaskCount(type: TaskType, count: number) {
       const counts = this._taskCounts;
       const prev = counts[type];
@@ -1256,9 +1337,10 @@ const Zone: ZoneType = (function (global: any) {
     _zoneDelegates: ZoneDelegate[] | null = null;
     _state: TaskState = 'notScheduled';
 
-    constructor(
-      type: T, source: string, callback: Function, options: TaskData | undefined,
-      scheduleFn: ((task: Task) => void) | undefined, cancelFn: ((task: Task) => void) | undefined) {
+    constructor(type: T, source: string, callback: Function, options: TaskData | undefined,
+                scheduleFn: ((task: Task) => void) | undefined,
+                cancelFn: ((task: Task) => void) | undefined
+    ) {
       this.type = type;
       this.source = source;
       this.data = options;
@@ -1276,6 +1358,13 @@ const Zone: ZoneType = (function (global: any) {
       }
     }
 
+    /**
+     * 执行任务（依托Zone的delegate来最终完成的）
+     * @param task
+     * @param target
+     * @param args
+     * @returns {any}
+     */
     static invokeTask(task: any, target: any, args: any): any {
       if (!task) {
         task = this;
@@ -1285,6 +1374,7 @@ const Zone: ZoneType = (function (global: any) {
         task.runCount++;
         return task.zone.runTask(task, target, args);
       } finally {
+        // 只剩一个TaskFrame，将所有队列中的MicroTask执行掉
         if (_numberOfNestedTaskFrames == 1) {
           drainMicroTaskQueue();
         }
@@ -1304,6 +1394,14 @@ const Zone: ZoneType = (function (global: any) {
       this._transitionTo(notScheduled, scheduling);
     }
 
+    /**
+     * 改变task的状态
+     * 用fromState来验证前一个状态，确保状态切换无误
+     * @param {TaskState} toState
+     * @param {TaskState} fromState1
+     * @param {TaskState} fromState2
+     * @private
+     */
     _transitionTo(toState: TaskState, fromState1: TaskState, fromState2?: TaskState) {
       if (this._state === fromState1 || this._state === fromState2) {
         this._state = toState;
@@ -1325,8 +1423,6 @@ const Zone: ZoneType = (function (global: any) {
       }
     }
 
-    // add toJSON method to prevent cyclic error when
-    // call JSON.stringify(zoneTask)
     public toJSON() {
       return {
         type: this.type,
@@ -1350,11 +1446,14 @@ const Zone: ZoneType = (function (global: any) {
   let _isDrainingMicrotaskQueue: boolean = false;
   let nativeMicroTaskQueuePromise: any;
 
+  /**
+   * 安排一个microTask到队列中去
+   * 对于MicroTask的执行方式，首选Promise，然后才是setTimeout
+   * @param {MicroTask} task
+   */
   function scheduleMicroTask(task?: MicroTask) {
-    // if we are not running in any task, and there has not been anything scheduled
-    // we must bootstrap the initial task creation by manually scheduling the drain
+    // 如果没有任何任务在运行，并且队列中也没有任务了，那就要手动去触发执行，否则就只会不断地往队列里面塞任务
     if (_numberOfNestedTaskFrames === 0 && _microTaskQueue.length === 0) {
-      // We are not running in Task, so we need to kickstart the microtask queue.
       if (!nativeMicroTaskQueuePromise) {
         if (global[symbolPromise]) {
           nativeMicroTaskQueuePromise = global[symbolPromise].resolve(0);
@@ -1363,8 +1462,6 @@ const Zone: ZoneType = (function (global: any) {
       if (nativeMicroTaskQueuePromise) {
         let nativeThen = nativeMicroTaskQueuePromise[symbolThen];
         if (!nativeThen) {
-          // native Promise is not patchable, we need to use `then` directly
-          // issue 1078
           nativeThen = nativeMicroTaskQueuePromise['then'];
         }
         nativeThen.call(nativeMicroTaskQueuePromise, drainMicroTaskQueue);
@@ -1375,9 +1472,16 @@ const Zone: ZoneType = (function (global: any) {
     task && _microTaskQueue.push(task);
   }
 
+  /**
+   * 处理队列中所有MicroTask
+   */
   function drainMicroTaskQueue() {
+    // 记录是否正在执行的状态
     if (!_isDrainingMicrotaskQueue) {
       _isDrainingMicrotaskQueue = true;
+      /**
+       * 处理过程中，可能会产生额外的microTask，所以要用while来处理!!!
+       */
       while (_microTaskQueue.length) {
         const queue = _microTaskQueue;
         _microTaskQueue = [];
@@ -1403,13 +1507,19 @@ const Zone: ZoneType = (function (global: any) {
 
 
   const NO_ZONE = {name: 'NO ZONE'};
-  const notScheduled: 'notScheduled' = 'notScheduled', scheduling: 'scheduling' = 'scheduling',
-    scheduled: 'scheduled' = 'scheduled', running: 'running' = 'running',
-    canceling: 'canceling' = 'canceling', unknown: 'unknown' = 'unknown';
-  const microTask: 'microTask' = 'microTask', macroTask: 'macroTask' = 'macroTask',
-    eventTask: 'eventTask' = 'eventTask';
+  const notScheduled: 'notScheduled' = 'notScheduled'
+    , scheduling: 'scheduling' = 'scheduling'
+    , scheduled: 'scheduled' = 'scheduled'
+    , running: 'running' = 'running'
+    , canceling: 'canceling' = 'canceling'
+    , unknown: 'unknown' = 'unknown';
+  const microTask: 'microTask' = 'microTask'
+    , macroTask: 'macroTask' = 'macroTask'
+    , eventTask: 'eventTask' = 'eventTask';
 
   const patches: { [key: string]: any } = {};
+
+  const noop = (): void => undefined;
   const _api: _ZonePrivate = {
     symbol: __symbol__,
     currentZoneFrame: () => _currentZoneFrame,
@@ -1435,9 +1545,6 @@ const Zone: ZoneType = (function (global: any) {
   // 当前的任务
   let _currentTask: Task | null = null;
   let _numberOfNestedTaskFrames = 0;
-
-  function noop() {
-  }
 
   function __symbol__(name: string) {
     return '__zone_symbol__' + name;
