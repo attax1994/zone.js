@@ -6,10 +6,10 @@
 * found in the LICENSE file at https://angular.io/license
 */
 (function (global, factory) {
-	typeof exports === 'object' && typeof module !== 'undefined' ? factory(require('rxjs/Scheduler'), require('rxjs/scheduler/async'), require('rxjs/scheduler/asap')) :
-	typeof define === 'function' && define.amd ? define(['rxjs/Scheduler', 'rxjs/scheduler/async', 'rxjs/scheduler/asap'], factory) :
-	(factory(global.Scheduler,global.async,global.Rx.Scheduler));
-}(this, (function (Scheduler,async,asap) { 'use strict';
+	typeof exports === 'object' && typeof module !== 'undefined' ? factory(require('rxjs/Scheduler'), require('rxjs/scheduler/asap'), require('rxjs/scheduler/async')) :
+	typeof define === 'function' && define.amd ? define(['rxjs/Scheduler', 'rxjs/scheduler/asap', 'rxjs/scheduler/async'], factory) :
+	(factory(global.Rx.Scheduler,global.Rx.Scheduler,global.Rx.Scheduler));
+}(this, (function (Scheduler,asap,async) { 'use strict';
 
 /**
  * @license

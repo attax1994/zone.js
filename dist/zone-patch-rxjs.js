@@ -27,7 +27,9 @@ Zone.__load_patch('rxjs', function (global, Zone) {
     var empty = {
         closed: true,
         next: function (value) { },
-        error: function (err) { throw err; },
+        error: function (err) {
+            throw err;
+        },
         complete: function () { }
     };
     function toSubscriber(nextOrObserver, error, complete) {

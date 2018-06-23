@@ -268,15 +268,15 @@ Zone.__load_patch('Error', function (global, Zone, api) {
                 childDetectZone.scheduleMacroTask(blacklistedStackFramesSymbol, function () {
                     childDetectZone.scheduleMicroTask(blacklistedStackFramesSymbol, function () {
                         throw new ZoneAwareError(ZoneAwareError, NativeError);
-                    }, null, function (t) {
+                    }, undefined, function (t) {
                         t._transitionTo = fakeTransitionTo;
                         t.invoke();
                     });
-                }, null, function (t) {
+                }, undefined, function (t) {
                     t._transitionTo = fakeTransitionTo;
                     t.invoke();
                 }, function () { });
-            }, null, function (t) {
+            }, undefined, function (t) {
                 t._transitionTo = fakeTransitionTo;
                 t.invoke();
             }, function () { });
