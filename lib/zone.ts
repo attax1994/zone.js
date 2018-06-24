@@ -652,7 +652,6 @@ const Zone: ZoneType = (function (global: any) {
    * Performance API
    */
   const performance: { mark(name: string): void; measure(name: string, label: string): void; } = global['performance'];
-
   /**
    * Performance API的mark封装
    * @param {string} name
@@ -660,7 +659,6 @@ const Zone: ZoneType = (function (global: any) {
   function mark(name: string) {
     performance && performance['mark'] && performance['mark'](name);
   }
-
   /**
    * Performance API的Measure封装
    * @param {string} name
