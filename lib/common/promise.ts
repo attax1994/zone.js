@@ -33,10 +33,10 @@ Zone.__load_patch('ZoneAwarePromise', (global: any, Zone: ZoneType, api: _ZonePr
       const rejection = e && e.rejection;
       if (rejection) {
         console.error(
-            'Unhandled Promise rejection:',
-            rejection instanceof Error ? rejection.message : rejection,
-            '; Zone:', (<Zone>e.zone).name, '; Task:', e.task && (<Task>e.task).source,
-            '; Value:', rejection, rejection instanceof Error ? rejection.stack : undefined);
+          'Unhandled Promise rejection:',
+          rejection instanceof Error ? rejection.message : rejection,
+          '; Zone:', (<Zone>e.zone).name, '; Task:', e.task && (<Task>e.task).source,
+          '; Value:', rejection, rejection instanceof Error ? rejection.stack : undefined);
       } else {
         console.error(e);
       }
@@ -105,11 +105,11 @@ Zone.__load_patch('ZoneAwarePromise', (global: any, Zone: ZoneType, api: _ZonePr
     };
   }
 
-  const once = function() {
+  const once = function () {
     let wasCalled = false;
 
     return function wrapper(wrappedFunction: Function) {
-      return function() {
+      return function () {
         if (wasCalled) {
           return;
         }
@@ -124,7 +124,7 @@ Zone.__load_patch('ZoneAwarePromise', (global: any, Zone: ZoneType, api: _ZonePr
 
   // Promise Resolution
   function resolvePromise(
-      promise: ZoneAwarePromise<any>, state: boolean, value: any): ZoneAwarePromise<any> {
+    promise: ZoneAwarePromise<any>, state: boolean, value: any): ZoneAwarePromise<any> {
     const onceWrapper = once();
     if (promise === value) {
       throw new TypeError(TYPE_ERROR);
@@ -144,15 +144,15 @@ Zone.__load_patch('ZoneAwarePromise', (global: any, Zone: ZoneType, api: _ZonePr
       }
       // if (value instanceof ZoneAwarePromise) {
       if (state !== REJECTED && value instanceof ZoneAwarePromise &&
-          value.hasOwnProperty(symbolState) && value.hasOwnProperty(symbolValue) &&
-          (value as any)[symbolState] !== UNRESOLVED) {
+        value.hasOwnProperty(symbolState) && value.hasOwnProperty(symbolValue) &&
+        (value as any)[symbolState] !== UNRESOLVED) {
         clearRejectedNoCatch(<Promise<any>>value);
         resolvePromise(promise, (value as any)[symbolState], (value as any)[symbolValue]);
       } else if (state !== REJECTED && typeof then === 'function') {
         try {
           then.call(
-              value, onceWrapper(makeResolver(promise, state)),
-              onceWrapper(makeResolver(promise, false)));
+            value, onceWrapper(makeResolver(promise, state)),
+            onceWrapper(makeResolver(promise, false)));
         } catch (err) {
           onceWrapper(() => {
             resolvePromise(promise, false, err);
@@ -178,12 +178,12 @@ Zone.__load_patch('ZoneAwarePromise', (global: any, Zone: ZoneType, api: _ZonePr
         if (state === REJECTED && value instanceof Error) {
           // check if longStackTraceZone is here
           const trace = Zone.currentTask && Zone.currentTask.data &&
-              (Zone.currentTask.data as any)[creationTrace];
+            (Zone.currentTask.data as any)[creationTrace];
           if (trace) {
             // only keep the long stack trace into error when in longStackTraceZone
             ObjectDefineProperty(
-                value, CURRENT_TASK_TRACE_SYMBOL,
-                {configurable: true, enumerable: false, writable: true, value: trace});
+              value, CURRENT_TASK_TRACE_SYMBOL,
+              {configurable: true, enumerable: false, writable: true, value: trace});
           }
         }
 
@@ -195,8 +195,8 @@ Zone.__load_patch('ZoneAwarePromise', (global: any, Zone: ZoneType, api: _ZonePr
           try {
             // try to print more readable error log
             throw new Error(
-                'Uncaught (in promise): ' + readableObjectToString(value) +
-                (value && value.stack ? '\n' + value.stack : ''));
+              'Uncaught (in promise): ' + readableObjectToString(value) +
+              (value && value.stack ? '\n' + value.stack : ''));
           } catch (err) {
             const error: UncaughtPromiseError = err;
             error.rejection = value;
@@ -214,6 +214,7 @@ Zone.__load_patch('ZoneAwarePromise', (global: any, Zone: ZoneType, api: _ZonePr
   }
 
   const REJECTION_HANDLED_HANDLER = __symbol__('rejectionHandledHandler');
+
   function clearRejectedNoCatch(promise: ZoneAwarePromise<any>): void {
     if ((promise as any)[symbolState] === REJECTED_NO_CATCH) {
       // if the promise is rejected no catch status
@@ -238,19 +239,19 @@ Zone.__load_patch('ZoneAwarePromise', (global: any, Zone: ZoneType, api: _ZonePr
   }
 
   function scheduleResolveOrReject<R, U1, U2>(
-      promise: ZoneAwarePromise<any>, zone: AmbientZone, chainPromise: ZoneAwarePromise<any>,
-      onFulfilled?: ((value: R) => U1)|null|undefined,
-      onRejected?: ((error: any) => U2)|null|undefined): void {
+    promise: ZoneAwarePromise<any>, zone: AmbientZone, chainPromise: ZoneAwarePromise<any>,
+    onFulfilled?: ((value: R) => U1) | null | undefined,
+    onRejected?: ((error: any) => U2) | null | undefined): void {
     clearRejectedNoCatch(promise);
     const promiseState = (promise as any)[symbolState];
     const delegate = promiseState ?
-        (typeof onFulfilled === 'function') ? onFulfilled : forwardResolution :
-        (typeof onRejected === 'function') ? onRejected : forwardRejection;
+      (typeof onFulfilled === 'function') ? onFulfilled : forwardResolution :
+      (typeof onRejected === 'function') ? onRejected : forwardRejection;
     zone.scheduleMicroTask(source, () => {
       try {
         const parentPromiseValue = (promise as any)[symbolValue];
         const isFinallyPromise =
-            chainPromise && symbolFinally === (chainPromise as any)[symbolFinally];
+          chainPromise && symbolFinally === (chainPromise as any)[symbolFinally];
         if (isFinallyPromise) {
           // if the promise is generated from finally call, keep parent promise's state and value
           (chainPromise as any)[symbolParentPromiseValue] = parentPromiseValue;
@@ -258,10 +259,10 @@ Zone.__load_patch('ZoneAwarePromise', (global: any, Zone: ZoneType, api: _ZonePr
         }
         // should not pass value to finally callback
         const value = zone.run(
-            delegate, undefined,
-            isFinallyPromise && delegate !== forwardRejection && delegate !== forwardResolution ?
-                [] :
-                [parentPromiseValue]);
+          delegate, undefined,
+          isFinallyPromise && delegate !== forwardRejection && delegate !== forwardResolution ?
+            [] :
+            [parentPromiseValue]);
         resolvePromise(chainPromise, true, value);
       } catch (error) {
         // if error occurs, should always return this error
@@ -292,9 +293,11 @@ Zone.__load_patch('ZoneAwarePromise', (global: any, Zone: ZoneType, api: _ZonePr
         resolve = res;
         reject = rej;
       });
+
       function onResolve(value: any) {
         promise && (promise = null || resolve(value));
       }
+
       function onReject(error: any) {
         promise && (promise = null || reject(error));
       }
@@ -322,14 +325,14 @@ Zone.__load_patch('ZoneAwarePromise', (global: any, Zone: ZoneType, api: _ZonePr
           value = this.resolve(value);
         }
         value.then(
-            ((index) => (value: any) => {
-              resolvedValues[index] = value;
-              count--;
-              if (!count) {
-                resolve(resolvedValues);
-              }
-            })(count),
-            reject!);
+          ((index) => (value: any) => {
+            resolvedValues[index] = value;
+            count--;
+            if (!count) {
+              resolve(resolvedValues);
+            }
+          })(count),
+          reject!);
         count++;
       }
       if (!count) resolve!(resolvedValues);
@@ -337,8 +340,8 @@ Zone.__load_patch('ZoneAwarePromise', (global: any, Zone: ZoneType, api: _ZonePr
     }
 
     constructor(
-        executor:
-            (resolve: (value?: R|PromiseLike<R>) => void, reject: (error?: any) => void) => void) {
+      executor:
+        (resolve: (value?: R | PromiseLike<R>) => void, reject: (error?: any) => void) => void) {
       const promise: ZoneAwarePromise<R> = this;
       if (!(promise instanceof ZoneAwarePromise)) {
         throw new Error('Must be an instanceof Promise.');
@@ -353,11 +356,11 @@ Zone.__load_patch('ZoneAwarePromise', (global: any, Zone: ZoneType, api: _ZonePr
     }
 
     then<TResult1 = R, TResult2 = never>(
-        onFulfilled?: ((value: R) => TResult1 | PromiseLike<TResult1>)|undefined|null,
-        onRejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>)|undefined|
-        null): Promise<TResult1|TResult2> {
-      const chainPromise: Promise<TResult1|TResult2> =
-          new (this.constructor as typeof ZoneAwarePromise)(null as any);
+      onFulfilled?: ((value: R) => TResult1 | PromiseLike<TResult1>) | undefined | null,
+      onRejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined |
+        null): Promise<TResult1 | TResult2> {
+      const chainPromise: Promise<TResult1 | TResult2> =
+        new (this.constructor as typeof ZoneAwarePromise)(null as any);
       const zone = Zone.current;
       if ((this as any)[symbolState] == UNRESOLVED) {
         (<any[]>(this as any)[symbolValue]).push(zone, chainPromise, onFulfilled, onRejected);
@@ -367,14 +370,14 @@ Zone.__load_patch('ZoneAwarePromise', (global: any, Zone: ZoneType, api: _ZonePr
       return chainPromise;
     }
 
-    catch<TResult = never>(onRejected?: ((reason: any) => TResult | PromiseLike<TResult>)|undefined|
-                           null): Promise<R|TResult> {
+    catch<TResult = never>(onRejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined |
+      null): Promise<R | TResult> {
       return this.then(null, onRejected);
     }
 
     finally<U>(onFinally?: () => U | PromiseLike<U>): Promise<R> {
-      const chainPromise: Promise<R|never> =
-          new (this.constructor as typeof ZoneAwarePromise)(null as any);
+      const chainPromise: Promise<R | never> =
+        new (this.constructor as typeof ZoneAwarePromise)(null as any);
       (chainPromise as any)[symbolFinally] = symbolFinally;
       const zone = Zone.current;
       if ((this as any)[symbolState] == UNRESOLVED) {
@@ -385,6 +388,7 @@ Zone.__load_patch('ZoneAwarePromise', (global: any, Zone: ZoneType, api: _ZonePr
       return chainPromise;
     }
   }
+
   // Protect against aggressive optimizers dropping seemingly unused properties.
   // E.g. Closure Compiler in advanced mode.
   ZoneAwarePromise['resolve'] = ZoneAwarePromise.resolve;
@@ -402,12 +406,12 @@ Zone.__load_patch('ZoneAwarePromise', (global: any, Zone: ZoneType, api: _ZonePr
     if (!desc) {
       desc = {configurable: true, enumerable: true};
     }
-    desc.get = function() {
+    desc.get = function () {
       // if we already set ZoneAwarePromise, use patched one
       // otherwise return native one.
       return global[ZONE_AWARE_PROMISE] ? global[ZONE_AWARE_PROMISE] : global[symbolPromise];
     };
-    desc.set = function(NewNativePromise) {
+    desc.set = function (NewNativePromise) {
       if (NewNativePromise === ZoneAwarePromise) {
         // if the NewNativePromise is ZoneAwarePromise
         // save to global
@@ -449,7 +453,7 @@ Zone.__load_patch('ZoneAwarePromise', (global: any, Zone: ZoneType, api: _ZonePr
     // Keep a reference to the original method.
     proto[symbolThen] = originalThen;
 
-    Ctor.prototype.then = function(onResolve: any, onReject: any) {
+    Ctor.prototype.then = function (onResolve: any, onReject: any) {
       const wrapped = new ZoneAwarePromise((resolve, reject) => {
         originalThen.call(this, resolve, reject);
       });
@@ -459,7 +463,7 @@ Zone.__load_patch('ZoneAwarePromise', (global: any, Zone: ZoneType, api: _ZonePr
   }
 
   function zoneify(fn: Function) {
-    return function() {
+    return function () {
       let resultPromise = fn.apply(this, arguments);
       if (resultPromise instanceof ZoneAwarePromise) {
         return resultPromise;
